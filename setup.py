@@ -341,7 +341,7 @@ if CUDA_HOME is not None:
     )
 elif MUSA_HOME is not None:
     SimplePorting(cuda_dir_path="ktransformers/ktransformers_ext/cuda", mapping_rule={
-        # Common
+        # Common rules
         "at::cuda": "at::musa",
         "#include <ATen/cuda/CUDAContext.h>": "#include \"torch_musa/csrc/aten/musa/MUSAContext.h\"",
         "#include <c10/cuda/CUDAGuard.h>": "#include \"torch_musa/csrc/core/MUSAGuard.h\"",
@@ -349,6 +349,7 @@ elif MUSA_HOME is not None:
     ops_module = MUSAExtension('KTransformersOps', [
         'ktransformers/ktransformers_ext/cuda_musa/custom_gguf/dequant.mu',
         'ktransformers/ktransformers_ext/cuda_musa/binding.cpp',
+        # TODO: Add Marlin support for MUSA.
         # 'ktransformers/ktransformers_ext/cuda_musa/gptq_marlin/gptq_marlin.mu'
     ],
     extra_compile_args={

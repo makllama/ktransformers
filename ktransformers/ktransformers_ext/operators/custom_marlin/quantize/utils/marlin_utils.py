@@ -3,6 +3,7 @@ import random
 
 import numpy
 import torch
+import torch_musa
 
 from ktransformers.ktransformers_ext.operators.custom_marlin.quantize.utils.format_24 import (
     mask_creator, sparse_semi_structured_from_dense_cutlass)
@@ -12,8 +13,6 @@ from ktransformers.ktransformers_ext.operators.custom_marlin.quantize.utils.marl
     marlin_perm, marlin_scale_perm, marlin_scale_perm_single)
 from ktransformers.ktransformers_ext.operators.custom_marlin.quantize.utils.quant_utils import (
     get_pack_factor, quantize_weights, sort_weights)
-
-__cuda_arch = torch.cuda.get_device_capability()
 
 MARLIN_TILE = 16
 
@@ -27,7 +26,7 @@ GPTQ_MARLIN_SUPPORTED_GROUP_SIZES = [-1, 32, 64, 128]
 GPTQ_MARLIN_SUPPORTED_SYM = [True]
 
 def is_marlin_supported():
-    return __cuda_arch[0] >= 8
+    return false
 
 
 def marlin_permute_weights(q_w, size_k, size_n, perm, tile=MARLIN_TILE):
@@ -117,7 +116,7 @@ def marlin_quantize(
 def inject_24(w, size_k, size_n):
     assert w.shape == (size_k, size_n)
 
-    mask = mask_creator(w.t()).t().cuda().bool()
+    mask = mask_creator(w.t()).t().musa().bool()
 
     return (mask * w).contiguous(), mask.contiguous()
 

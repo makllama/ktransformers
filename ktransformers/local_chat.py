@@ -1,8 +1,8 @@
 """
-Description  :  
+Description  :
 Author       : Boxin Zhang, Azure-Tang
 Version      : 0.1.0
-Copyright (c) 2024 by KVCache.AI, All Rights Reserved. 
+Copyright (c) 2024 by KVCache.AI, All Rights Reserved.
 """
 
 import os
@@ -12,6 +12,7 @@ import sys
 project_dir = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, project_dir)
 import torch
+import torch_musa
 import logging
 from transformers import (
     AutoTokenizer,
@@ -109,7 +110,7 @@ def local_chat(
             "please input the path of your gguf file(gguf file in the dir containing input gguf file must all belong to current model):"
         )
     optimize_and_load_gguf(model, optimize_rule_path, gguf_path, config)
-    
+
     try:
             model.generation_config = GenerationConfig.from_pretrained(model_path)
     except:
@@ -155,7 +156,7 @@ def local_chat(
                 content = "Please write a piece of quicksort code in C++."
         elif os.path.isfile(content):
             content = open(content, "r").read()
-            
+
         messages = [{"role": "user", "content": content}]
         input_tensor = tokenizer.apply_chat_template(
             messages, add_generation_prompt=True, return_tensors="pt"
@@ -174,12 +175,12 @@ def local_chat(
 
         if system != "Windows" and (config.architectures[0] == "DeepseekV2ForCausalLM" or "DeepseekV3ForCausalLM") and flashinfer_enabled:
             generated = prefill_and_generate(
-                model, tokenizer, input_tensor.cuda(), max_new_tokens, use_cuda_graph, mode = mode, force_think = force_think,
+                model, tokenizer, input_tensor.musa(), max_new_tokens, use_cuda_graph, mode = mode, force_think = force_think,
                 use_flashinfer_mla = True, num_heads = config.num_attention_heads, head_dim_ckv = config.kv_lora_rank, head_dim_kpe = config.qk_rope_head_dim, q_head_dim = config.qk_rope_head_dim + config.qk_nope_head_dim
             )
         else:
             generated = prefill_and_generate(
-                model, tokenizer, input_tensor.cuda(), max_new_tokens, use_cuda_graph, mode = mode, force_think = force_think,
+                model, tokenizer, input_tensor.musa(), max_new_tokens, use_cuda_graph, mode = mode, force_think = force_think,
             )
 
 

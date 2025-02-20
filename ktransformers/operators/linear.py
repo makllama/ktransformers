@@ -1,20 +1,21 @@
 #!/usr/bin/env python
 # coding=utf-8
 '''
-Description  :  
+Description  :
 Author       : Azure-Tang, Boxin Zhang
 Date         : 2024-07-25 11:25:24
 Version      : 0.1.0
-LastEditors  : Azure 
+LastEditors  : Azure
 LastEditTime : 2024-08-29 09:11:16
-Copyright (c) 2024 by KVCache.AI, All Rights Reserved. 
+Copyright (c) 2024 by KVCache.AI, All Rights Reserved.
 '''
 
 
 import ctypes
 import torch
+import torch_musa
 from torch import Tensor, nn
-import KTransformersOps 
+import KTransformersOps
 from ktransformers.util.custom_gguf import GGUFLoader
 from ktransformers.util.utils import InferenceState
 from ktransformers.ktransformers_ext.operators.custom_marlin.quantize.utils.marlin_utils import (
@@ -42,7 +43,7 @@ class KLinearBase(ABC):
         gguf_loader: GGUFLoader,
         config: PretrainedConfig,
         orig_module: nn.Module = None,
-        device: str = "cuda",
+        device: str = "musa",
         **kwargs,
     ):
         # super().__init__(key, gguf_loader, config, orig_module, device, **kwargs)
@@ -98,7 +99,7 @@ class KLinearBase(ABC):
         return tensors
 
     @abstractmethod
-    def load(self, w: dict | nn.Parameter | tuple | None = None, device: str|None = "cuda"):
+    def load(self, w: dict | nn.Parameter | tuple | None = None, device: str|None = "musa"):
         pass
 
     @abstractmethod
@@ -113,7 +114,7 @@ class KLinearTorch(KLinearBase):
         gguf_loader: GGUFLoader,
         config: PretrainedConfig,
         orig_module: nn.Module = None,
-        device: str = "cuda",
+        device: str = "musa",
         **kwargs,
     ):
         super().__init__(key, gguf_loader, config, orig_module, device, **kwargs)
@@ -137,11 +138,11 @@ class KLinearTorch(KLinearBase):
         if device is None: device = self.device
         if w is None: w = self.load_weight(device=device)
         # else: self.out_features = w.shape[0], self.in_features = w.shape[1]
-        
+
         if isinstance(w, nn.Parameter):
             try:
                 self.weight = w.to(dtype=self.dtype).view(self.out_features, self.in_features).T
-            except: 
+            except:
                 self.weight = w.to(dtype=self.dtype).T
             self.has_bias = False
         elif isinstance(w, tuple):
@@ -177,7 +178,7 @@ class KLinearMarlin(KLinearBase):
         gguf_loader: GGUFLoader,
         config: PretrainedConfig,
         orig_module: nn.Module = None,
-        device: str = "cuda",
+        device: str = "musa",
         num_bits: int = 4,  # 4-bit/8-bit is supported
         group_size: int = 64,  # -1, 32, 64, 128
         act_order: bool = False,
@@ -194,8 +195,8 @@ class KLinearMarlin(KLinearBase):
     def load(self, w: dict | nn.Parameter | tuple | None = None, device: str|None = None):
         if device is None: device = self.device
         assert device.lower() != "cpu", "Marlin quantized linear only supports GPU device"
-        if w is None: 
-            w = self.load_weight(device=device) 
+        if w is None:
+            w = self.load_weight(device=device)
 
         if isinstance(w, nn.Parameter):
             # pad weight
@@ -270,7 +271,7 @@ class KLinearCPUInfer(KLinearBase):
         config: PretrainedConfig,
         orig_module: nn.Module = None,
         device: str = "cpu",
-        out_device: str = "cuda", # this device mean which device the output should on. TODO: support cpu.
+        out_device: str = "musa", # this device mean which device the output should on. TODO: support cpu.
         stride = 16,
         group_max_len = 1024,
         **kwargs,
@@ -286,19 +287,19 @@ class KLinearCPUInfer(KLinearBase):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         origin_shape = x.shape # [batch_size, q_len, hidden_size]
-        if origin_shape[1] == 1 and torch.cuda.is_current_stream_capturing():
+        if origin_shape[1] == 1 and torch.musa.is_current_stream_capturing():
             out_device = x.device
             self.input_tensor_cpu.copy_(x, non_blocking=True)
             qlen = origin_shape[1]
             KLinearCPUInfer.CPU_INFER.submit_with_cuda_stream(
-                torch.cuda.current_stream().cuda_stream,
+                torch.musa.current_stream().musa_stream,
                 self.linear.forward(
-                    qlen, 
-                    self.input_tensor_cpu.data_ptr(), 
+                    qlen,
+                    self.input_tensor_cpu.data_ptr(),
                     self.output_cpu.data_ptr()
                 )
             )
-            KLinearCPUInfer.CPU_INFER.sync_with_cuda_stream(torch.cuda.current_stream().cuda_stream)
+            KLinearCPUInfer.CPU_INFER.sync_with_cuda_stream(torch.musa.current_stream().musa_stream)
             self.output_gpu.copy_(self.output_cpu, non_blocking=True)
             if self.has_bias:
                 self.output_gpu += self.bias
@@ -312,8 +313,8 @@ class KLinearCPUInfer(KLinearBase):
             output = torch.empty(output_shape, device=x.device, dtype=x.dtype)
             KLinearCPUInfer.CPU_INFER.submit(
                 self.linear.forward(
-                    qlen, 
-                    x.data_ptr(), 
+                    qlen,
+                    x.data_ptr(),
                     output.data_ptr()
                 )
             )
@@ -330,13 +331,13 @@ class KLinearCPUInfer(KLinearBase):
         if self.bias is not None:
             self.has_bias = True
             self.bias = self.bias.to(device)
-            
+
         weight_ptr = ctypes.addressof(
             ctypes.cast(self.weight.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
         )
         config = cpuinfer_ext.linear.LinearConfig(self.in_features, self.out_features, self.stride, self.group_max_len, weight_ptr, self.weight_type, 30)
         self.linear = cpuinfer_ext.linear.Linear(config)
-        
+
         if warmup:
             KLinearCPUInfer.CPU_INFER.submit(self.linear.warm_up())
             KLinearCPUInfer.CPU_INFER.sync()
@@ -361,10 +362,10 @@ class KLinearCPUInfer(KLinearBase):
         if self.w is not None:
             self.w = None
         if self.has_bias:
-            self.bias = None        
+            self.bias = None
 
 LINEAR_MAP = {
-    "KLinearMarlin": KLinearMarlin,
+    "KLinearMarlin": KLinearTorch,
     "KLinearTorch": KLinearTorch,
     "KLinearCPUInfer": KLinearCPUInfer
 }
@@ -377,9 +378,9 @@ class KTransformersLinear(BaseInjectedModule, KLinearBase):
         config: PretrainedConfig,
         orig_module: nn.Module,
         # device: str = "cuda",
-        generate_device: str = "cuda",
-        generate_op: str| None = "KLinearMarlin",
-        prefill_device: str = "cuda",
+        generate_device: str = "musa",
+        generate_op: str| None = "KLinearTorch",
+        prefill_device: str = "musa",
         prefill_op: str| None = "KLinearTorch",
         **kwargs,
     ):
@@ -448,7 +449,7 @@ class KTransformersLinear(BaseInjectedModule, KLinearBase):
         self.device = self.generate_linear.device
 
     def set_inference_mode(self, mode: InferenceState):
-        if not mode: 
+        if not mode:
             mode = InferenceState.GENERATE
         if mode == InferenceState.GENERATE:
             self.load(mode=InferenceState.GENERATE)

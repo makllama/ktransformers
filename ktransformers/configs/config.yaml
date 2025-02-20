@@ -27,7 +27,7 @@ model:
   path: deepseek-ai/DeepSeek-V2-Lite-Chat
   gguf_path: ./DeepSeek-V2-Lite-Chat-GGUF
 
-  device: cuda:0
+  device: musa:0
   cache_lens: 8192
 
 web:
@@ -51,7 +51,7 @@ long_context:
   head_select_mode: SHARED
   preselect_block_count: 32
   layer_step: 1
-  token_step: 
+  token_step:
 
 local_chat:
   prompt_file: ""

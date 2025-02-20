@@ -3,16 +3,16 @@
   replace:
     class: ktransformers.operators.RoPE.YarnRotaryEmbeddingV3
     kwargs:
-      generate_device: "cuda"
-      prefill_device: "cuda"
+      generate_device: "musa"
+      prefill_device: "musa"
 - match:
-    name: "^model\\.layers\\.(?!.*self_attn\\.kv_b_proj).*$"  # regular expression 
+    name: "^model\\.layers\\.(?!.*self_attn\\.kv_b_proj).*$"  # regular expression
     class: torch.nn.Linear  # only match modules matching name and class simultaneously
   replace:
     class: ktransformers.operators.linear.KTransformersLinear  # optimized Kernel on quantized data types
     kwargs:
-      generate_device: "cuda"
-      prefill_device: "cuda"
+      generate_device: "musa"
+      prefill_device: "musa"
       generate_op: "KLinearMarlin"
       prefill_op: "KLinearTorch"
 - match:
@@ -21,33 +21,33 @@
   replace:
     class: ktransformers.operators.experts.KDeepseekV3MoE     # mlp module with custom forward function
     kwargs:
-      generate_device: "cuda"
-      prefill_device: "cuda"
+      generate_device: "musa"
+      prefill_device: "musa"
 - match:
     class: ktransformers.models.modeling_deepseek_v3.MoEGate
   replace:
     class: ktransformers.operators.gate.KMoEGate
     kwargs:
-      generate_device: "cuda:0"
-      prefill_device: "cuda:0"
+      generate_device: "musa:0"
+      prefill_device: "musa:0"
 - match:
     name: "^model\\.layers\\..*\\.mlp\\.experts$"
   replace:
     class: ktransformers.operators.experts.KTransformersExperts     # custom MoE Kernel with expert paralleism
     kwargs:
-      prefill_device: "cuda"
+      prefill_device: "musa"
       prefill_op: "KExpertsTorch"
       generate_device: "cpu"
       generate_op: "KExpertsCPU"
-      out_device: "cuda"
+      out_device: "musa"
   recursive: False # don't recursively inject submodules of this module
 - match:
     name: "^model\\.layers\\..*\\.self_attn$"
   replace:
     class: ktransformers.operators.attention.KDeepseekV2Attention # optimized MLA implementation
     kwargs:
-      generate_device: "cuda"
-      prefill_device: "cuda"
+      generate_device: "musa"
+      prefill_device: "musa"
 - match:
     name: "^model$"
   replace:

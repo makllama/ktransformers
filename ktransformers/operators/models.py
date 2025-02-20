@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 # coding=utf-8
 """
-Description  :  
+Description  :
 Author       : Azure-Tang
 Date         : 2024-07-25 11:25:24
 Version      : 1.0.0
-LastEditors  : Azure 
+LastEditors  : Azure
 LastEditTime : 2024-08-27 07:29:04
-Copyright (c) 2024 by KVCache.AI, All Rights Reserved. 
+Copyright (c) 2024 by KVCache.AI, All Rights Reserved.
 """
 
 import inspect
@@ -15,6 +15,7 @@ import math
 from typing import List, Optional, Tuple, Union
 import time
 import torch
+import torch_musa
 import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch import nn
@@ -189,7 +190,7 @@ class KQwen2MoeModel(BaseInjectedModule):
         gguf_loader: GGUFLoader,
         config: PretrainedConfig,
         orig_module: nn.Module,
-        device: str = "cuda",
+        device: str = "musa",
         per_layer_prefill_intput_threshold: int = 30000,  # if None, no per-layer prefill
         transfer_map: dict = None,
         **kwargs,
@@ -281,7 +282,7 @@ class KQwen2MoeModel(BaseInjectedModule):
         if inputs_embeds is None:
             input_ids = input_ids.to("cpu")
             inputs_embeds = self.embed_tokens(input_ids)
-            inputs_embeds = inputs_embeds.to("cuda")
+            inputs_embeds = inputs_embeds.to("musa")
 
         if cache_position is None:
             past_seen_tokens = (
@@ -313,13 +314,13 @@ class KQwen2MoeModel(BaseInjectedModule):
 
         for i, decoder_layer in enumerate(self.layers):
             if self.transfer_map is not None and i in self.transfer_map:
-                prev_stream = torch.cuda.current_stream()
+                prev_stream = torch.musa.current_stream()
                 cur_device = self.transfer_map[i]
                 if cur_device not in self.stream_device_map:
-                    self.stream_device_map[cur_device] = torch.cuda.Stream(cur_device)
-                torch.cuda.set_device(cur_device)
+                    self.stream_device_map[cur_device] = torch.musa.Stream(cur_device)
+                torch.musa.set_device(cur_device)
                 self.stream_device_map[cur_device].wait_stream(prev_stream)
-                torch.cuda.set_stream(self.stream_device_map[cur_device])
+                torch.musa.set_stream(self.stream_device_map[cur_device])
                 hidden_states = hidden_states.to(
                     self.transfer_map[i], non_blocking=True
                 )
@@ -358,7 +359,7 @@ class KQwen2MoeModel(BaseInjectedModule):
                 if per_layer_prefill_flag:
                     # print(f"to gpu")
                     self.load_layer_to(decoder_layer, InferenceState.PREFILL)
-                    torch.cuda.empty_cache()
+                    torch.musa.empty_cache()
                 layer_outputs = decoder_layer(
                     hidden_states,
                     attention_mask=causal_mask,
@@ -372,7 +373,7 @@ class KQwen2MoeModel(BaseInjectedModule):
                 if per_layer_prefill_flag:
                     # print(f"to cpu")
                     self.load_layer_to(decoder_layer, InferenceState.UNLOAD)
-                    torch.cuda.empty_cache()
+                    torch.musa.empty_cache()
             hidden_states = layer_outputs[0]
 
             if use_cache:
@@ -427,7 +428,7 @@ class KQwen2MoeModel(BaseInjectedModule):
         ), "module should be nn.ModuleList of decoder layers"
 
         # TODO Support restore to original device, not only cuda
-        device = "cpu" if target == InferenceState.UNLOAD else "cuda"
+        device = "cpu" if target == InferenceState.UNLOAD else "musa"
 
         # attn
         layer.self_attn.q_proj.set_inference_mode(target)
@@ -539,7 +540,7 @@ class KDeepseekV2Model(BaseInjectedModule):
         gguf_loader: GGUFLoader,
         config: PretrainedConfig,
         orig_module: nn.Module,
-        device: str = "cuda",
+        device: str = "musa",
         per_layer_prefill_intput_threshold: int = 30000,  # if None, no per-layer prefill
         transfer_map: dict = None,
         **kwargs,
@@ -581,7 +582,7 @@ class KDeepseekV2Model(BaseInjectedModule):
             per_layer_prefill_flag = True
             for layer in self.layers:
                 self.load_layer_to(layer, InferenceState.UNLOAD)
-            torch.cuda.empty_cache()
+            torch.musa.empty_cache()
         else:
             pass
         output_attentions = (
@@ -625,7 +626,7 @@ class KDeepseekV2Model(BaseInjectedModule):
             if use_legacy_cache:
                 past_key_values = DynamicCache.from_legacy_cache(past_key_values)
             past_key_values_length = past_key_values.get_usable_length(seq_length)
-        
+
         if inputs_embeds is None:
             org_device = input_ids.device
             # TODO move to embed_tokens's device, not hard code to cpu
@@ -669,14 +670,14 @@ class KDeepseekV2Model(BaseInjectedModule):
 
         for i, decoder_layer in enumerate(self.layers):
             if self.transfer_map is not None and i in self.transfer_map:
-                prev_stream = torch.cuda.current_stream()
+                prev_stream = torch.musa.current_stream()
                 cur_device = self.transfer_map[i]
                 if cur_device not in self.stream_device_map and cur_device.lower() != "cpu":
-                    self.stream_device_map[cur_device] = torch.cuda.Stream(cur_device)
+                    self.stream_device_map[cur_device] = torch.musa.Stream(cur_device)
                 if cur_device.lower() != "cpu":
-                    torch.cuda.set_device(cur_device)
+                    torch.musa.set_device(cur_device)
                     self.stream_device_map[cur_device].wait_stream(prev_stream)
-                    torch.cuda.set_stream(self.stream_device_map[cur_device])
+                    torch.musa.set_stream(self.stream_device_map[cur_device])
                 hidden_states = hidden_states.to(
                     self.transfer_map[i], non_blocking=True
                 )
@@ -715,7 +716,7 @@ class KDeepseekV2Model(BaseInjectedModule):
                 if per_layer_prefill_flag:
                     # print(f"to gpu")
                     self.load_layer_to(decoder_layer, InferenceState.PREFILL)
-                    torch.cuda.empty_cache()
+                    torch.musa.empty_cache()
                 t4 = time.time()
                 # with open("log.txt", "a") as f:
                 #     f.write(f"@@@@@@@@@@@@@@@@@layer {i}@@@@@@@@@@@@@@@@@@@@ \n")
@@ -732,7 +733,7 @@ class KDeepseekV2Model(BaseInjectedModule):
                 if per_layer_prefill_flag:
                     # print(f"to cpu")
                     self.load_layer_to(decoder_layer, InferenceState.UNLOAD)
-                    torch.cuda.empty_cache()
+                    torch.musa.empty_cache()
                 t6 = time.time()
             t_gpu += t4 - t3
             t_cpu += t6 - t5
@@ -759,7 +760,7 @@ class KDeepseekV2Model(BaseInjectedModule):
             per_layer_prefill_flag = False
             for layer in self.layers:
                 self.load_layer_to(layer, InferenceState.GENERATE)
-            torch.cuda.empty_cache()
+            torch.musa.empty_cache()
             t7 = time.time()
 
             print(
@@ -796,7 +797,7 @@ class KDeepseekV2Model(BaseInjectedModule):
         ), "module should be nn.ModuleList of decoder layers"
 
         # TODO Support restore to original device, not only cuda
-        device = "cpu" if target == InferenceState.UNLOAD else "cuda"
+        device = "cpu" if target == InferenceState.UNLOAD else "musa"
 
         # TODO Support DFS to auto use {to, set_inference_mode} according to the module type
 
@@ -956,7 +957,7 @@ class KLlamaModel(BaseInjectedModule):
         gguf_loader: GGUFLoader,
         config: PretrainedConfig,
         orig_module: nn.Module,
-        device: str = "cuda",
+        device: str = "musa",
         per_layer_prefill_intput_threshold: int = 30000,  # if None, no per-layer prefill
         transfer_map: dict = None,
         **kwargs,
@@ -980,7 +981,7 @@ class KLlamaModel(BaseInjectedModule):
             max_seq_len=self.long_context_config["max_seq_len"],
             block_size=self.long_context_config["block_size"],
             config=config,
-            device=torch.device("cuda"),
+            device=torch.device("musa"),
             local_windows_len=self.long_context_config["local_windows_len"],
             topk=self.long_context_config["second_select_num"],
             threads_num=self.ext_config["cpu_infer"],
@@ -1061,7 +1062,7 @@ class KLlamaModel(BaseInjectedModule):
             cache_position = torch.arange(
                 past_seen_tokens,
                 past_seen_tokens + inputs_embeds.shape[1],
-                device="cuda",
+                device="musa",
             )
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
@@ -1089,7 +1090,7 @@ class KLlamaModel(BaseInjectedModule):
                 return_dict,
             )
         elif q_len <= chunck_size:
-            inputs_embeds = inputs_embeds.to('cuda')
+            inputs_embeds = inputs_embeds.to('musa')
             output = self.forward_chunk(
                 inputs_embeds,
                 causal_mask,
@@ -1115,7 +1116,7 @@ class KLlamaModel(BaseInjectedModule):
             print(f'current prefill length: {cur_idx}')
             chunk_mask = None
             if inputs_embeds.device.type == 'cpu':
-                tmp_inputs_embeds = inputs_embeds[:, cur_idx : min(cur_idx + chunck_size, q_len)].to("cuda")
+                tmp_inputs_embeds = inputs_embeds[:, cur_idx : min(cur_idx + chunck_size, q_len)].to("musa")
             else:
                 tmp_inputs_embeds = inputs_embeds[:, cur_idx : min(cur_idx + chunck_size, q_len)]
             output_with_past = self.forward_chunk(
@@ -1332,7 +1333,7 @@ class KLlamaModel(BaseInjectedModule):
         if (
             self.config._attn_implementation == "sdpa"
             and attention_mask is not None
-            and attention_mask.device.type == "cuda"
+            and attention_mask.device.type == "musa"
             and not output_attentions
         ):
             # Attend to all tokens in fully masked rows in the causal_mask, for example the relevant first rows when

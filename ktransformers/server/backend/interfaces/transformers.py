@@ -14,6 +14,7 @@ from ktransformers.server.config.config import Config
 from ktransformers.server.schemas.base import ObjectID
 from ktransformers.server.utils.multi_timer import Profiler
 import torch
+import torch_musa
 import sys, os
 from ..base import ThreadContext, BackendInterfaceBase
 from ktransformers.server.config.log import logger
@@ -187,7 +188,7 @@ class TransformersInterface(BackendInterfaceBase):
             unequal_mask = torch.ne(x,y)
             unequal_positions = torch.nonzero(unequal_mask)
             num_unequal_elements = unequal_mask.sum().item()
-            logger.warning(f'num_unequal_elements: {num_unequal_elements}') 
+            logger.warning(f'num_unequal_elements: {num_unequal_elements}')
 
             input_ids = input_ids[:,self.seq_length:]
         logger.debug(f"get input ids of shape {input_ids.shape}")
@@ -292,11 +293,11 @@ class TransformersInterface(BackendInterfaceBase):
     def generate(self):
         self.profiler.set_counter("decode", 0)
         for i in range(1, self.args.max_new_tokens):
-            
-            with torch.backends.cuda.sdp_kernel(enable_flash=False, enable_mem_efficient=False, enable_math=True):
+
+            with torch.backends.musa.sdp_kernel(enable_flash=False, enable_mem_efficient=False, enable_math=True):
                 if i > 1 and flashinfer_enabled:
                     MLAWrapperSingleton.plan_all(None,None,None,self.active_cache_position.to(torch.int32)+1,
-                                             num_heads=self.model.config.num_attention_heads, head_dim_ckv=self.model.config.kv_lora_rank, 
+                                             num_heads=self.model.config.num_attention_heads, head_dim_ckv=self.model.config.kv_lora_rank,
                                              head_dim_kpe=self.model.config.qk_rope_head_dim, page_size=self.cache.page_size,
                                              sm_scale=(self.model.config.qk_rope_head_dim + self.model.config.qk_nope_head_dim) ** (-0.5), q_data_type=torch.bfloat16, kv_data_type=torch.bfloat16)
                 next_token = self.decode_one_tokens()
@@ -353,7 +354,7 @@ class TransformersInterface(BackendInterfaceBase):
         for t in self.generate():
             if t is not None:
                 print(t, end="",flush=True)
-                yield t 
+                yield t
         print("")
         self.profiler.pause_timer("decode")
         self.report_last_time_performance()

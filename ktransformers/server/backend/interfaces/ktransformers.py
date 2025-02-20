@@ -1,4 +1,5 @@
 import torch
+import torch_musa
 import asyncio
 from transformers import AutoTokenizer, AutoConfig, GenerationConfig
 from ktransformers.server.backend.interfaces.transformers import (
@@ -76,11 +77,11 @@ class KTransformersInterface(TransformersInterface):
     def decode_one_tokens(self):
         device_map = self.model.gguf_loader.tensor_device_map
         torch_device = get_device("blk.0.self_attn", device_map)
-        torch_device = "cuda:0" if torch_device == "cuda" else torch_device
+        torch_device = "musa:0" if torch_device == "musa" else torch_device
         global warm_uped
-        torch.cuda.set_device(torch_device)
+        torch.musa.set_device(torch_device)
         if self.args.use_cuda_graph and warm_uped == True:
-            
+
             if not hasattr(self, "cuda_graph_runner"):
                 self.cuda_graph_runner = CUDAGraphRunner()
                 self.cuda_graph_runner.capture(
@@ -99,13 +100,13 @@ class KTransformersInterface(TransformersInterface):
                     self.current_ids, self.active_cache_position.unsqueeze(0), self.active_cache_position
                 )
                 self.cache.change_seq_length(1)
-                torch.cuda.synchronize()
+                torch.musa.synchronize()
                 logits = logits[0, -1, :]
                 return self.logits_to_token(logits)
-        
+
         if self.args.use_cuda_graph:
             warm_uped = True
-            
+
         if self.use_static_cache:
             mask = torch.ones((1, self.seq_length)).to(torch_device)
             logits = self.model(
@@ -130,8 +131,8 @@ class KTransformersInterface(TransformersInterface):
         self.profiler.set_counter("prefill", input_ids_length)
         logger.debug(f"input_ids: {input_ids.shape}")
 
-        device = self.device_map.get("blk.0.self_attn", {}).get("generate_device", "cuda:0")
-        device = "cuda:0" if device == "cuda" else device
+        device = self.device_map.get("blk.0.self_attn", {}).get("generate_device", "musa:0")
+        device = "musa:0" if device == "musa" else device
 
         if is_new:
             self.cache.reset()
@@ -163,7 +164,7 @@ class KTransformersInterface(TransformersInterface):
         if not (type(self) is TransformersInterface):
             input_ids = input_ids.to("cpu")
         inputs_embeds = self.model.model.embed_tokens(input_ids).to(device)
-        torch.cuda.set_device(device)
+        torch.musa.set_device(device)
         if self.use_static_cache:
             logits = self.model(
                 inputs_embeds=inputs_embeds,
@@ -181,9 +182,9 @@ class KTransformersInterface(TransformersInterface):
 
     @property
     def active_cache_position(self):
-        device = self.device_map.get("blk.0.self_attn", {}).get("generate_device", "cuda:0")
+        device = self.device_map.get("blk.0.self_attn", {}).get("generate_device", "musa:0")
         return torch.tensor([self.seq_length - 1], device=device)
-    
+
     async def inference(self, local_messages, thread_id: str):
         async with self._infer_lock:
             async for v in super().inference(local_messages, thread_id):

@@ -239,7 +239,7 @@ git submodule update
 </code></pre>
 </li>
 <li>
-<p>[Optional] If you want to run with website, please <a href="./doc/en/api/server/website.html">compile the website</a> before execute <code>bash install.sh</code></p>
+<p>[Optional] If you want to run with website, please <a href="./api/server/website.html">compile the website</a> before execute <code>bash install.sh</code></p>
 </li>
 <li>
 <p>For Linux</p>
@@ -266,7 +266,7 @@ bash install.sh # or `make dev_install`
 </ul>
 </li>
 <li>
-<p>If you are developer, you can make use of the makefile to compile and format the code. <br> the detailed usage of makefile is <a href="./doc/en/makefile_usage.html">here</a></p>
+<p>If you are developer, you can make use of the makefile to compile and format the code. <br> the detailed usage of makefile is <a href="./makefile_usage.html">here</a></p>
 </li>
 </ul>
 <h3 id="local-chat"><a class="header" href="#local-chat">Local Chat</a></h3>
@@ -283,7 +283,7 @@ We provide a simple command-line local chat Python script that you can run for t
 mkdir DeepSeek-V2-Lite-Chat-GGUF
 cd DeepSeek-V2-Lite-Chat-GGUF
 
-wget https://huggingface.co/mzwing/DeepSeek-V2-Lite-Chat-GGUF/resolve/main/DeepSeek-V2-Lite-Chat.Q4_K_M.gguf -O DeepSeek-V2-Lite-Chat.Q4_K_M.gguf
+wget https://huggingface.co/mradermacher/DeepSeek-V2-Lite-GGUF/resolve/main/DeepSeek-V2-Lite.Q4_K_M.gguf -O DeepSeek-V2-Lite-Chat.Q4_K_M.gguf
 
 cd .. # Move to repo's root dir
 
@@ -306,7 +306,7 @@ python -m ktransformers.local_chat --model_path deepseek-ai/DeepSeek-V2-Lite-Cha
 <p><code>--gguf_path</code> (required): Path of a directory containing GGUF files which could that can be downloaded from <a href="https://huggingface.co/mzwing/DeepSeek-V2-Lite-Chat-GGUF/tree/main">Hugging Face</a>. Note that the directory should only contains GGUF of current model, which means you need one separate directory for each model.</p>
 </li>
 <li>
-<p><code>--optimize_rule_path</code> (required except for Qwen2Moe and DeepSeek-V2): Path of YAML file containing optimize rules. There are two rule files pre-written in the <a href="ktransformers/optimize/optimize_rules">ktransformers/optimize/optimize_rules</a> directory for optimizing DeepSeek-V2 and Qwen2-57B-A14, two SOTA MoE models.</p>
+<p><code>--optimize_config_path</code> (required except for Qwen2Moe and DeepSeek-V2): Path of YAML file containing optimize rules. There are two rule files pre-written in the <a href="ktransformers/optimize/optimize_rules">ktransformers/optimize/optimize_rules</a> directory for optimizing DeepSeek-V2 and Qwen2-57B-A14, two SOTA MoE models.</p>
 </li>
 <li>
 <p><code>--max_new_tokens</code>: Int (default=1000). Maximum number of new tokens to generate.</p>
